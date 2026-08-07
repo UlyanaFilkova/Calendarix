@@ -67,9 +67,14 @@ async def add_source(
         session.add(source)
         session.commit()
 
+        rabbitmq = context.bot_data.get("rabbitmq")
+        if rabbitmq:
+            rabbitmq.send_parse_request(source.id, source.url, user_id)
+
         await update.message.reply_text(
             f"✅ Канал {username} добавлен. "
-            "Как только я научусь парсить, сразу найду там события."
+            "Отправил запрос на сканирование. "
+            "Новые события появятся здесь через минуту."
         )
         print(f"✅ Added channel {username} (user {user_id})")
     except Exception as exc:

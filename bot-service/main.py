@@ -1,6 +1,7 @@
 """Bot Service entry point: env loading, DB init, handler registration."""
 
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 from telegram import Update
@@ -14,15 +15,73 @@ from telegram.ext import (
     filters,
 )
 
-from database import init_db
+from database import Event, SessionLocal, init_db
 from handlers.add_source import add_source
 from handlers.calendar import show_today, show_week
 from handlers.sources import show_sources
 from handlers.start import start, main_menu
+from services.rabbitmq_client import RabbitMQClient
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+RABBITMQ_URL = os.getenv("RABBITMQ_URL")
+
+
+def handle_parse_result(data: dict) -> None:
+    """Save events from a parse result into the database."""
+    session = SessionLocal()
+    try:
+        saved = 0
+        for event_data in data.get("events", []):
+            post_url = event_data.get("post_url")
+            existing = None
+            if post_url:
+                existing = (
+                    session.query(Event)
+                    .filter(Event.post_url == post_url)
+                    .first()
+                )
+            if existing:
+                continue
+            session.add(Event(
+                source_id=data.get("source_id"),
+                user_id=data.get("user_id"),
+                title=event_data.get("title") or "Без названия",
+                description=event_data.get("description"),
+                tags=event_data.get("tags"),
+                category=event_data.get("category"),
+                price=event_data.get("price"),
+                image_url=event_data.get("image_url"),
+                event_date=_parse_datetime(event_data.get("event_date")),
+                end_date=_parse_datetime(event_data.get("end_date")),
+                location=event_data.get("location"),
+                url=event_data.get("url"),
+                original_text=event_data.get("original_text") or "",
+                post_url=post_url or "",
+                raw_data=event_data.get("raw_data"),
+            ))
+            saved += 1
+        session.commit()
+        print(f"💾 Saved {saved} new events "
+              f"(source {data.get('source_id')})")
+    except Exception as exc:
+        session.rollback()
+        print(f"❌ Failed to save parse result: {exc}")
+    finally:
+        session.close()
+
+
+def _parse_datetime(value) -> datetime | None:
+    """Convert an ISO string into a datetime, if possible."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return None
 
 
 async def handle_callback(
@@ -54,6 +113,7 @@ async def handle_callback(
 
 def main() -> None:
     """Initialize and run the bot."""
+    rabbitmq = None
     try:
         init_db()
 
@@ -63,6 +123,12 @@ def main() -> None:
         application: Application = (
             ApplicationBuilder().token(BOT_TOKEN).build()
         )
+
+        if RABBITMQ_URL:
+            rabbitmq = RabbitMQClient(RABBITMQ_URL)
+            rabbitmq.connect()
+            rabbitmq.start_consuming(handle_parse_result)
+            application.bot_data["rabbitmq"] = rabbitmq
 
         application.add_handler(CommandHandler("start", start))
         application.add_handler(
@@ -76,6 +142,9 @@ def main() -> None:
         print(f"❌ {exc}")
     except Exception as exc:
         print(f"❌ Unexpected error: {exc}")
+    finally:
+        if rabbitmq:
+            rabbitmq.close()
 
 
 if __name__ == "__main__":
