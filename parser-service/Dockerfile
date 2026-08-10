@@ -10,8 +10,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy bot source code
+# Copy parser source code
 COPY . .
 
-# Start the bot
+# Start the parser worker
 CMD ["python", "main.py"]

@@ -1,0 +1,4 @@
+pika
+telethon
+openai
+python-dotenv
