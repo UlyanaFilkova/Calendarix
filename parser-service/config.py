@@ -7,10 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 REQUIRED_VARS = {
-    "TG_API_ID": "API ID from my.telegram.org",
-    "TG_API_HASH": "API hash from my.telegram.org",
-    "TG_PHONE": "phone number of the Telegram account",
-    "OPENAI_API_KEY": "OpenAI API key",
+    "LLM_API_KEY": "API key from console.groq.com",
     "RABBITMQ_URL": "RabbitMQ connection string",
 }
 
@@ -25,12 +22,15 @@ def _require_env(name: str, hint: str) -> str:
     return value
 
 
-TG_API_ID = _require_env("TG_API_ID", REQUIRED_VARS["TG_API_ID"])
-TG_API_HASH = _require_env("TG_API_HASH", REQUIRED_VARS["TG_API_HASH"])
-TG_PHONE = _require_env("TG_PHONE", REQUIRED_VARS["TG_PHONE"])
-OPENAI_API_KEY = _require_env(
-    "OPENAI_API_KEY", REQUIRED_VARS["OPENAI_API_KEY"]
-)
+LLM_API_KEY = _require_env("LLM_API_KEY", REQUIRED_VARS["LLM_API_KEY"])
 RABBITMQ_URL = _require_env(
     "RABBITMQ_URL", REQUIRED_VARS["RABBITMQ_URL"]
+)
+
+LLM_BASE_URL = os.getenv(
+    "LLM_BASE_URL",
+    "https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1/",
+)
+LLM_MODEL = os.getenv(
+    "LLM_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 )

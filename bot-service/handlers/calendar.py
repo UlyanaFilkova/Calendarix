@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from sqlalchemy.orm import joinedload
+
 from database import Event, SessionLocal
 
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -33,6 +35,7 @@ def get_events(user_id: int, start: datetime, end: datetime) -> list[Event]:
     try:
         return (
             session.query(Event)
+            .options(joinedload(Event.source))
             .filter(
                 Event.user_id == user_id,
                 Event.event_date >= start,

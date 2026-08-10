@@ -60,16 +60,12 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-      TG_API_ID: ${TG_API_ID}
-      TG_API_HASH: ${TG_API_HASH}
-      TG_PHONE: ${TG_PHONE}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL}
       RABBITMQ_URL: ${RABBITMQ_URL}
-    volumes:
-      - parser_sessions:/app
     restart: unless-stopped
 
 volumes:
   pgdata:
   rabbitmq_data:
-  parser_sessions:

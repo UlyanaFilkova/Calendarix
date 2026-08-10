@@ -1,4 +1,4 @@
 pika
-telethon
+requests
 openai
 python-dotenv

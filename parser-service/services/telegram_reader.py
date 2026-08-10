@@ -1,70 +1,135 @@
-"""Telegram channel scanning via Telethon."""
+"""Channel post scanning via the public t.me/s web preview."""
 
-import asyncio
+import re
 from datetime import datetime
+from html import unescape
 
-from telethon import TelegramClient
-from telethon.errors import FloodWaitError
-from telethon.tl.types import Message
+import requests
 
-import config
 from services.nlp import EventExtractor
 from utils.url_parser import normalize_channel_url
 
 MIN_TEXT_LENGTH = 30
 MAX_ORIGINAL_TEXT = 500
 
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+
+TME_S_URL = "https://t.me/s/{username}"
+
+# Start of each message block in the t.me/s HTML
+MESSAGE_START_RE = re.compile(
+    r'<div class="tgme_widget_message\b[^>]*data-post="([^"]+)"'
+)
+TEXT_DIV_RE = re.compile(
+    r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+    re.S,
+)
+TIME_RE = re.compile(r'<time datetime="([^"]+)"')
+
+
+def _clean_html(raw: str) -> str:
+    """Convert message HTML into plain text."""
+    raw = re.sub(r"<br\s*/?>", "\n", raw)
+    raw = re.sub(r"</(div|p)>", "\n", raw)
+    raw = re.sub(r"<[^>]+>", "", raw)
+    return unescape(raw).strip()
+
 
 class TelegramReader:
-    """Reads recent posts from a channel and extracts events."""
+    """Reads recent posts of a public channel via t.me/s preview."""
 
     def __init__(self):
-        self.client = TelegramClient(
-            "parser_session", config.TG_API_ID, config.TG_API_HASH
-        )
         self.extractor = EventExtractor()
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": USER_AGENT})
 
-    async def connect(self) -> None:
-        """Start the Telegram client and authorize."""
+    def _fetch_page(self, username: str) -> str | None:
+        resp = self.session.get(
+            TME_S_URL.format(username=username), timeout=30
+        )
+        if resp.status_code != 200:
+            print(
+                f"⚠️ Channel @{username}: not found "
+                f"(HTTP {resp.status_code})"
+            )
+            return None
+        return resp.text
+
+    @staticmethod
+    def _parse_messages(html: str, username: str) -> list[dict]:
+        messages = []
+        matches = list(MESSAGE_START_RE.finditer(html))
+        for idx, match in enumerate(matches):
+            post_key = match.group(1)  # e.g. "durov/519"
+            end = (
+                matches[idx + 1].start()
+                if idx + 1 < len(matches)
+                else len(html)
+            )
+            block = html[match.start():end]
+
+            text_match = TEXT_DIV_RE.search(block)
+            if not text_match:
+                continue
+            text = _clean_html(text_match.group(1))
+            if not text:
+                continue
+
+            time_match = TIME_RE.search(block)
+            messages.append(
+                {
+                    "text": text,
+                    "url": f"https://t.me/{post_key}",
+                    "date": time_match.group(1) if time_match else None,
+                }
+            )
+        return messages
+
+    @staticmethod
+    def _parse_post_date(raw: str | None) -> datetime | None:
+        """Parse the post publication datetime from t.me/s markup."""
+        if not raw:
+            return None
         try:
-            await self.client.start(phone=config.TG_PHONE)
-            print("✅ Telegram client ready")
-        except Exception as exc:
-            print(f"❌ Telegram authorization failed: {exc}")
-            raise
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            return None
 
-    async def scan_channel(
+    def scan_channel(
         self, url: str, limit: int = 10
     ) -> tuple[list[dict], int]:
         """Scan recent posts and return extracted events."""
         channel = normalize_channel_url(url)
         username = channel.lstrip("@")
+
+        html = self._fetch_page(username)
+        if html is None:
+            return [], 0
+
+        messages = self._parse_messages(html, username)
+        print(f"📥 Received {len(messages)} messages from {channel}")
+        if not messages:
+            print(f"⚠️ No posts found in {channel} (private or empty)")
+            return [], 0
+
         events: list[dict] = []
-
-        try:
-            messages = await self.client.get_messages(username, limit=limit)
-            print(f"📥 Received {len(messages)} messages from {channel}")
-        except FloodWaitError as exc:
-            print(f"⏳ Flood wait {exc.seconds}s, sleeping...")
-            await asyncio.sleep(exc.seconds)
-            return events, 0
-        except Exception as exc:
-            print(f"❌ Cannot read channel {channel}: {exc}")
-            return events, 0
-
-        for message in messages:
-            if not isinstance(message, Message):
-                continue
-            text = (message.text or "").strip()
-            if not text or len(text) < MIN_TEXT_LENGTH:
+        for message in messages[:limit]:
+            text = message["text"]
+            if len(text) < MIN_TEXT_LENGTH:
                 continue
 
-            event = self.extractor.extract(text, datetime.now())
+            event = self.extractor.extract(
+                text,
+                self._parse_post_date(message["date"]) or datetime.now(),
+            )
             if not event:
                 continue
 
             event["original_text"] = text[:MAX_ORIGINAL_TEXT]
-            event["post_url"] = f"https://t.me/{username}/{message.id}"
+            event["post_url"] = message["url"]
             events.append(event)
 
         print(f"✅ Found {len(events)} events in {channel}")
