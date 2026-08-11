@@ -1,5 +1,7 @@
 """Handler for the user's channel list."""
 
+import html
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -61,9 +63,12 @@ async def show_sources(
                 )
                 .count()
             )
-            label = source.title
+            label = html.escape(source.title)
             if source.name and source.name != source.title:
-                label = f"{source.name} ({source.title})"
+                label = (
+                    f"{html.escape(source.name)} "
+                    f"({html.escape(source.title)})"
+                )
             lines.append(
                 f"• {label} — {event_count} событий"
             )
@@ -76,6 +81,13 @@ async def show_sources(
                 ]
             )
 
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "🔄 Обновить все каналы", callback_data="rescan_all"
+                )
+            ]
+        )
         keyboard.append(
             [
                 InlineKeyboardButton(
@@ -95,6 +107,52 @@ async def show_sources(
         print(f"❌ Failed to list channels: {exc}")
         await _answer(
             update, "⚠️ Не удалось получить список каналов. Попробуй позже."
+        )
+    finally:
+        session.close()
+
+
+async def rescan_all(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Send refresh requests for all of the user's channels."""
+    user_id = update.effective_user.id
+    nav = InlineKeyboardMarkup([nav_buttons("my_sources")])
+
+    rabbitmq = context.bot_data.get("rabbitmq")
+    if not rabbitmq:
+        await _answer(
+            update,
+            "⚠️ Сервис сканирования сейчас недоступен. Попробуй позже.",
+            nav,
+        )
+        return
+
+    session = SessionLocal()
+    try:
+        sources = (
+            session.query(Source)
+            .filter(Source.user_id == user_id)
+            .all()
+        )
+        sent = 0
+        for source in sources:
+            if rabbitmq.send_parse_request(source.id, source.url, user_id):
+                sent += 1
+        await _answer(
+            update,
+            f"🔄 Отправил запросы на обновление {sent} из {len(sources)} "
+            "каналов. События обновятся через несколько минут.",
+            nav,
+        )
+        print(f"🔄 Manual refresh queued for {sent}/{len(sources)} "
+              f"channels (user {user_id})")
+    except Exception as exc:
+        print(f"❌ Failed to refresh channels: {exc}")
+        await _answer(
+            update,
+            "⚠️ Не удалось запустить обновление. Попробуй позже.",
+            nav,
         )
     finally:
         session.close()
@@ -123,7 +181,7 @@ async def delete_source(
 
         await _answer(
             update,
-            f"Точно удалить канал {source.title}?\n"
+            f"Точно удалить канал {html.escape(source.title)}?\n"
             "Все его события тоже будут удалены.",
             reply_markup=_delete_confirm_markup(source.id),
         )
@@ -171,7 +229,7 @@ async def confirm_delete_source(
 
         await _answer(
             update,
-            f"🗑 Канал {source.title} удалён вместе с "
+            f"🗑 Канал {html.escape(source.title)} удалён вместе с "
             f"{deleted_events} событиями.",
             nav,
         )

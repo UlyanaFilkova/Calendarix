@@ -92,23 +92,24 @@ class RabbitMQClient:
     ) -> bool:
         """Publish a parsing task to the parse_requests queue."""
         try:
-            self._ensure_publisher()
-            message = json.dumps(
-                {
-                    "source_id": source_id,
-                    "url": url,
-                    "user_id": user_id,
-                },
-                ensure_ascii=False,
-            )
-            self._publisher_channel.basic_publish(
-                exchange="",
-                routing_key=PARSE_REQUESTS_QUEUE,
-                body=message,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,  # persistent message
-                ),
-            )
+            with self._publisher_lock:
+                self._ensure_publisher()
+                message = json.dumps(
+                    {
+                        "source_id": source_id,
+                        "url": url,
+                        "user_id": user_id,
+                    },
+                    ensure_ascii=False,
+                )
+                self._publisher_channel.basic_publish(
+                    exchange="",
+                    routing_key=PARSE_REQUESTS_QUEUE,
+                    body=message,
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,  # persistent message
+                    ),
+                )
             print(
                 f"📤 Parse request sent for source {source_id} "
                 f"(user {user_id})"

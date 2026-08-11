@@ -31,6 +31,7 @@ from handlers.sources import (
     cancel_delete,
     confirm_delete_source,
     delete_source,
+    rescan_all,
     show_sources,
 )
 from handlers.start import (
@@ -164,6 +165,8 @@ async def handle_callback(
         await manual_date(update, context)
     elif data == "my_sources":
         await show_sources(update, context)
+    elif data == "rescan_all":
+        await rescan_all(update, context)
     elif data == "cancel_delete":
         await cancel_delete(update, context)
     elif data.startswith("delete_source_"):
@@ -184,6 +187,32 @@ async def handle_callback(
         )
     else:
         await query.answer("🤷 Неизвестная кнопка")
+
+
+RESCAN_INTERVAL_SECONDS = 60 * 60  # rescan all channels once per hour
+
+
+def periodic_rescan(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Periodically re-scan all active channels for new posts."""
+    rabbitmq = context.bot_data.get("rabbitmq")
+    if not rabbitmq:
+        return
+    session = SessionLocal()
+    try:
+        sources = (
+            session.query(Source)
+            .filter(Source.is_active == True)
+            .all()
+        )
+        for source in sources:
+            rabbitmq.send_parse_request(
+                source.id, source.url, source.user_id
+            )
+        print(f"🔄 Periodic rescan queued for {len(sources)} channels")
+    except Exception as exc:
+        print(f"❌ Periodic rescan failed: {exc}")
+    finally:
+        session.close()
 
 
 def main() -> None:
@@ -210,6 +239,17 @@ def main() -> None:
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
         )
         application.add_handler(CallbackQueryHandler(handle_callback))
+
+        if rabbitmq:
+            application.job_queue.run_repeating(
+                periodic_rescan,
+                interval=RESCAN_INTERVAL_SECONDS,
+                first=RESCAN_INTERVAL_SECONDS,
+            )
+            print(
+                f"🕐 Periodic rescan every "
+                f"{RESCAN_INTERVAL_SECONDS // 60} minutes"
+            )
 
         print("🤖 Bot started, waiting for updates...")
         application.run_polling()

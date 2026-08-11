@@ -1,8 +1,10 @@
 """Calendar handlers: today, tomorrow, week, month and manual date views."""
 
+import html
 from datetime import datetime, timedelta, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from sqlalchemy.orm import joinedload
@@ -26,12 +28,21 @@ def format_event(event: Event) -> str:
         f"🕐 {event.event_date.strftime('%H:%M')} — "
         if has_time else ""
     )
-    location = f"\n📍 {event.location}" if event.location else ""
-    price = f"\n💵 {event.price}" if event.price else ""
-    source = event.source.title if event.source else "—"
+    title = html.escape(event.title)
+    location = (
+        f"\n📍 {html.escape(event.location)}" if event.location else ""
+    )
+    price = f"\n💵 {html.escape(event.price)}" if event.price else ""
+    source = event.source if event.source else None
+    if source:
+        source_label = html.escape(source.name or source.title)
+        post_url = html.escape(event.post_url or source.url)
+        source_line = f'📎 <a href="{post_url}">{source_label}</a>'
+    else:
+        source_line = "📎 —"
     return (
-        f"{time_part}{event.title}{location}{price}\n"
-        f"📎 {source}"
+        f"{time_part}{title}{location}{price}\n"
+        f"{source_line}"
     )
 
 
@@ -242,7 +253,11 @@ async def _answer(
     if update.callback_query:
         await update.callback_query.answer()
         await update.effective_message.reply_text(
-            text, reply_markup=reply_markup
+            text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML,
         )
     else:
-        await update.message.reply_text(text, reply_markup=reply_markup)
+        await update.message.reply_text(
+            text, reply_markup=reply_markup, parse_mode=ParseMode.HTML
+        )
