@@ -28,6 +28,10 @@ TEXT_DIV_RE = re.compile(
     re.S,
 )
 TIME_RE = re.compile(r'<time datetime="([^"]+)"')
+CHANNEL_TITLE_RE = re.compile(
+    r'class="tgme_channel_info_header_title"[^>]*>(.*?)</div>',
+    re.S,
+)
 
 
 def _clean_html(raw: str) -> str:
@@ -107,13 +111,16 @@ class TelegramReader:
 
         html = self._fetch_page(username)
         if html is None:
-            return [], 0
+            return [], 0, None
+
+        channel_title = self._extract_channel_title(html)
+        print(f"📥 Received posts from {channel} ({channel_title!r})")
 
         messages = self._parse_messages(html, username)
         print(f"📥 Received {len(messages)} messages from {channel}")
         if not messages:
             print(f"⚠️ No posts found in {channel} (private or empty)")
-            return [], 0
+            return [], 0, channel_title
 
         events: list[dict] = []
         for message in messages[:limit]:
@@ -133,4 +140,13 @@ class TelegramReader:
             events.append(event)
 
         print(f"✅ Found {len(events)} events in {channel}")
-        return events, len(messages)
+        return events, len(messages), channel_title
+
+    @staticmethod
+    def _extract_channel_title(html: str) -> str | None:
+        """Extract the channel display name from the t.me/s page."""
+        match = CHANNEL_TITLE_RE.search(html)
+        if not match:
+            return None
+        title = _clean_html(match.group(1))
+        return title or None

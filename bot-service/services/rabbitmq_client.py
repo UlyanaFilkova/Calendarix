@@ -32,10 +32,16 @@ class RabbitMQClient:
         self._consumer_lock = threading.RLock()
 
     def _open(self) -> tuple:
-        """Open a connection and declare durable queues."""
-        connection = pika.BlockingConnection(
-            pika.URLParameters(self.url),
-        )
+        """Open a connection and declare durable queues.
+
+        Heartbeats are disabled: the publisher connection is owned by the
+        bot's main thread, which is blocked in the Telegram polling loop
+        and never processes pika I/O between sends, so RabbitMQ would
+        close it as unresponsive after the heartbeat timeout.
+        """
+        params = pika.URLParameters(self.url)
+        params.heartbeat = 0
+        connection = pika.BlockingConnection(params)
         channel = connection.channel()
         channel.queue_declare(queue=PARSE_REQUESTS_QUEUE, durable=True)
         channel.queue_declare(queue=PARSE_RESULTS_QUEUE, durable=True)

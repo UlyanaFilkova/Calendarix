@@ -61,20 +61,18 @@ async def show_sources(
                 )
                 .count()
             )
+            label = source.title
+            if source.name and source.name != source.title:
+                label = f"{source.name} ({source.title})"
             lines.append(
-                f"• {source.title}\n"
-                f"  {source.url} — {event_count} событий"
+                f"• {label} — {event_count} событий"
             )
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        "🔁 Сканировать",
-                        callback_data=f"rescan_source_{source.id}",
-                    ),
-                    InlineKeyboardButton(
-                        "🗑 Удалить",
+                        f"🗑 {source.title}",
                         callback_data=f"delete_source_{source.id}",
-                    ),
+                    )
                 ]
             )
 
@@ -97,65 +95,6 @@ async def show_sources(
         print(f"❌ Failed to list channels: {exc}")
         await _answer(
             update, "⚠️ Не удалось получить список каналов. Попробуй позже."
-        )
-    finally:
-        session.close()
-
-
-async def rescan_source(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    """Re-send a parse request for a channel."""
-    source_id = int(update.callback_query.data.split("_")[-1])
-    user_id = update.effective_user.id
-    nav = InlineKeyboardMarkup([nav_buttons("my_sources")])
-
-    session = SessionLocal()
-    try:
-        source = (
-            session.query(Source)
-            .filter(Source.id == source_id, Source.user_id == user_id)
-            .first()
-        )
-        if not source:
-            await _answer(
-                update, "⚠️ Канал не найден. Возможно, он уже удалён.", nav
-            )
-            return
-
-        rabbitmq = context.bot_data.get("rabbitmq")
-        if not rabbitmq:
-            await _answer(
-                update,
-                "⚠️ Сервис сканирования сейчас недоступен. Попробуй позже.",
-                nav,
-            )
-            return
-
-        sent = rabbitmq.send_parse_request(
-            source.id, source.url, user_id
-        )
-        if sent:
-            await _answer(
-                update,
-                f"🔁 Запрос на сканирование {source.title} отправлен. "
-                "События появятся через минуту.",
-                nav,
-            )
-        else:
-            await _answer(
-                update,
-                f"⚠️ Не удалось отправить запрос для {source.title}. "
-                "Попробуй ещё раз.",
-                nav,
-            )
-        print(f"🔁 Rescan requested for {source.title} (user {user_id})")
-    except Exception as exc:
-        print(f"❌ Failed to rescan channel: {exc}")
-        await _answer(
-            update,
-            "⚠️ Не удалось запустить сканирование. Попробуй позже.",
-            nav,
         )
     finally:
         session.close()

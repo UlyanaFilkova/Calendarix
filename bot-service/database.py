@@ -44,6 +44,7 @@ class Source(Base):
     user_id = Column(Integer, nullable=False, index=True)
     url = Column(String, nullable=False)
     title = Column(String, nullable=False)
+    name = Column(String, nullable=True)
     type = Column(String, default="telegram")
     is_active = Column(Boolean, default=True)
     added_at = Column(DateTime, default=utcnow)

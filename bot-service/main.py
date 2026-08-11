@@ -15,7 +15,7 @@ from telegram.ext import (
     filters,
 )
 
-from database import Event, SessionLocal, init_db
+from database import Event, SessionLocal, Source, init_db
 from handlers.add_source import add_source
 from handlers.calendar import (
     handle_manual_date_input,
@@ -31,7 +31,6 @@ from handlers.sources import (
     cancel_delete,
     confirm_delete_source,
     delete_source,
-    rescan_source,
     show_sources,
 )
 from handlers.start import (
@@ -54,6 +53,15 @@ def handle_parse_result(data: dict) -> None:
     try:
         saved = 0
         updated = 0
+        channel_title = data.get("channel_title")
+        if channel_title and data.get("source_id"):
+            source = (
+                session.query(Source)
+                .filter(Source.id == data["source_id"])
+                .first()
+            )
+            if source and source.name != channel_title:
+                source.name = channel_title
         for event_data in data.get("events", []):
             fields = {
                 "title": event_data.get("title") or "Без названия",
@@ -162,8 +170,6 @@ async def handle_callback(
         await delete_source(update, context)
     elif data.startswith("confirm_delete_"):
         await confirm_delete_source(update, context)
-    elif data.startswith("rescan_source_"):
-        await rescan_source(update, context)
     elif data == "how_to_add":
         await query.answer()
         await query.message.reply_text(
