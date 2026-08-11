@@ -17,7 +17,16 @@ from telegram.ext import (
 
 from database import Event, SessionLocal, init_db
 from handlers.add_source import add_source
-from handlers.calendar import show_today, show_prev_week, show_week
+from handlers.calendar import (
+    handle_manual_date_input,
+    manual_date,
+    show_month,
+    show_prev_month,
+    show_prev_week,
+    show_today,
+    show_tomorrow,
+    show_week,
+)
 from handlers.sources import (
     cancel_delete,
     confirm_delete_source,
@@ -25,7 +34,12 @@ from handlers.sources import (
     rescan_source,
     show_sources,
 )
-from handlers.start import start, main_menu
+from handlers.start import (
+    dates_menu_markup,
+    main_menu,
+    nav_buttons,
+    start,
+)
 from services.rabbitmq_client import RabbitMQClient
 
 load_dotenv()
@@ -97,6 +111,16 @@ def _parse_datetime(value) -> datetime | None:
         return None
 
 
+async def handle_text(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Route text messages: manual date input vs. adding a channel."""
+    if context.user_data.get("awaiting_date"):
+        await handle_manual_date_input(update, context)
+    else:
+        await add_source(update, context)
+
+
 async def handle_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -104,31 +128,53 @@ async def handle_callback(
     query = update.callback_query
     data = query.data
 
-    if data == "today_events":
+    if data == "main_menu":
+        context.user_data.pop("awaiting_date", None)
+        await query.answer()
+        await query.message.reply_text(
+            "🏠 Главное меню:", reply_markup=main_menu()
+        )
+    elif data == "dates_menu":
+        context.user_data.pop("awaiting_date", None)
+        await query.answer()
+        await query.message.reply_text(
+            "📅 Выбери период:", reply_markup=dates_menu_markup()
+        )
+    elif data == "today_events":
         await show_today(update, context)
+    elif data == "tomorrow_events":
+        await show_tomorrow(update, context)
     elif data == "week_events":
         await show_week(update, context)
+    elif data == "month_events":
+        await show_month(update, context)
     elif data == "prev_week_events":
         await show_prev_week(update, context)
+    elif data == "prev_month_events":
+        await show_prev_month(update, context)
+    elif data == "manual_date":
+        await manual_date(update, context)
     elif data == "my_sources":
         await show_sources(update, context)
     elif data == "cancel_delete":
         await cancel_delete(update, context)
     elif data.startswith("delete_source_"):
         await delete_source(update, context)
-    elif data.startswith("rescan_source_"):
-        await rescan_source(update, context)
     elif data.startswith("confirm_delete_"):
         await confirm_delete_source(update, context)
+    elif data.startswith("rescan_source_"):
+        await rescan_source(update, context)
     elif data == "how_to_add":
         await query.answer()
-        await query.edit_message_text(
+        await query.message.reply_text(
             "📖 Как добавить канал:\n\n"
             "Просто пришли мне ссылку на канал в чат:\n"
             "• @username\n"
             "• https://t.me/username\n\n"
             "Я сохраню его в твой список.",
-            reply_markup=main_menu(),
+            reply_markup=InlineKeyboardMarkup(
+                [nav_buttons("my_sources")]
+            ),
         )
     else:
         await query.answer("🤷 Неизвестная кнопка")
@@ -155,7 +201,7 @@ def main() -> None:
 
         application.add_handler(CommandHandler("start", start))
         application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, add_source)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
         )
         application.add_handler(CallbackQueryHandler(handle_callback))
 

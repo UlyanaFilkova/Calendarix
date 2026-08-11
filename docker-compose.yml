@@ -69,6 +69,10 @@ services:
       LLM_MODEL: ${LLM_MODEL}
       RABBITMQ_URL: ${RABBITMQ_URL}
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./parser-service
 
 volumes:
   pgdata:

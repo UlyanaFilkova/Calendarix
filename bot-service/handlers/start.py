@@ -11,32 +11,61 @@ START_TEXT = (
 )
 
 
+def nav_buttons(back_callback: str) -> list[InlineKeyboardButton]:
+    """Build the 'Назад / В главное меню' navigation row."""
+    return [
+        InlineKeyboardButton("◀️ Назад", callback_data=back_callback),
+        InlineKeyboardButton("🏠 В главное меню", callback_data="main_menu"),
+    ]
+
+
 def main_menu() -> InlineKeyboardMarkup:
     """Build the main menu keyboard."""
     keyboard = [
         [
-            InlineKeyboardButton(
-                "➕ Добавить канал", callback_data="how_to_add"
-            )
+            InlineKeyboardButton("📅 Сегодня", callback_data="today_events"),
+            InlineKeyboardButton("📅 Выбрать даты", callback_data="dates_menu"),
         ],
+        [
+            InlineKeyboardButton("📋 Мои каналы", callback_data="my_sources"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def dates_menu_markup() -> InlineKeyboardMarkup:
+    """Build the 'choose dates' keyboard."""
+    keyboard = [
         [
             InlineKeyboardButton(
                 "📅 На неделю", callback_data="week_events"
             ),
             InlineKeyboardButton(
+                "📅 На месяц", callback_data="month_events"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
                 "🗓 Прошлая неделя", callback_data="prev_week_events"
+            ),
+            InlineKeyboardButton(
+                "🗓 Прошлый месяц", callback_data="prev_month_events"
             ),
         ],
         [
             InlineKeyboardButton(
                 "🔍 Сегодня", callback_data="today_events"
             ),
+            InlineKeyboardButton(
+                "🔍 Завтра", callback_data="tomorrow_events"
+            ),
         ],
         [
             InlineKeyboardButton(
-                "📋 Мои каналы", callback_data="my_sources"
+                "📝 Выбрать дату вручную", callback_data="manual_date"
             )
         ],
+        nav_buttons("main_menu"),
     ]
     return InlineKeyboardMarkup(keyboard)
 

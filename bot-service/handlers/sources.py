@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from database import Event, SessionLocal, Source
 
 from handlers.calendar import _answer
+from handlers.start import nav_buttons
 
 
 def _delete_confirm_markup(source_id: int) -> InlineKeyboardMarkup:
@@ -20,7 +21,8 @@ def _delete_confirm_markup(source_id: int) -> InlineKeyboardMarkup:
                 "❌ Отмена",
                 callback_data="cancel_delete",
             ),
-        ]
+        ],
+        nav_buttons("my_sources"),
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -76,6 +78,15 @@ async def show_sources(
                 ]
             )
 
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "➕ Добавить канал", callback_data="how_to_add"
+                )
+            ]
+        )
+        keyboard.append(nav_buttons("main_menu"))
+
         await _answer(
             update,
             "\n".join(lines),
@@ -95,11 +106,9 @@ async def rescan_source(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Re-send a parse request for a channel."""
-    query = update.callback_query
-    await query.answer()
-
-    source_id = int(query.data.split("_")[-1])
+    source_id = int(update.callback_query.data.split("_")[-1])
     user_id = update.effective_user.id
+    nav = InlineKeyboardMarkup([nav_buttons("my_sources")])
 
     session = SessionLocal()
     try:
@@ -109,16 +118,17 @@ async def rescan_source(
             .first()
         )
         if not source:
-            await query.edit_message_text(
-                "⚠️ Канал не найден. Возможно, он уже удалён."
+            await _answer(
+                update, "⚠️ Канал не найден. Возможно, он уже удалён.", nav
             )
             return
 
         rabbitmq = context.bot_data.get("rabbitmq")
         if not rabbitmq:
-            await query.edit_message_text(
-                "⚠️ Сервис сканирования сейчас недоступен. "
-                "Попробуй позже."
+            await _answer(
+                update,
+                "⚠️ Сервис сканирования сейчас недоступен. Попробуй позже.",
+                nav,
             )
             return
 
@@ -126,20 +136,26 @@ async def rescan_source(
             source.id, source.url, user_id
         )
         if sent:
-            await query.edit_message_text(
+            await _answer(
+                update,
                 f"🔁 Запрос на сканирование {source.title} отправлен. "
-                "События появятся через минуту."
+                "События появятся через минуту.",
+                nav,
             )
         else:
-            await query.edit_message_text(
+            await _answer(
+                update,
                 f"⚠️ Не удалось отправить запрос для {source.title}. "
-                "Попробуй ещё раз."
+                "Попробуй ещё раз.",
+                nav,
             )
         print(f"🔁 Rescan requested for {source.title} (user {user_id})")
     except Exception as exc:
         print(f"❌ Failed to rescan channel: {exc}")
-        await query.edit_message_text(
-            "⚠️ Не удалось запустить сканирование. Попробуй позже."
+        await _answer(
+            update,
+            "⚠️ Не удалось запустить сканирование. Попробуй позже.",
+            nav,
         )
     finally:
         session.close()
@@ -149,11 +165,9 @@ async def delete_source(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Ask for confirmation before removing a channel."""
-    query = update.callback_query
-    await query.answer()
-
-    source_id = int(query.data.split("_")[-1])
+    source_id = int(update.callback_query.data.split("_")[-1])
     user_id = update.effective_user.id
+    nav = InlineKeyboardMarkup([nav_buttons("my_sources")])
 
     session = SessionLocal()
     try:
@@ -163,12 +177,13 @@ async def delete_source(
             .first()
         )
         if not source:
-            await query.edit_message_text(
-                "⚠️ Канал не найден. Возможно, он уже удалён."
+            await _answer(
+                update, "⚠️ Канал не найден. Возможно, он уже удалён.", nav
             )
             return
 
-        await query.edit_message_text(
+        await _answer(
+            update,
             f"Точно удалить канал {source.title}?\n"
             "Все его события тоже будут удалены.",
             reply_markup=_delete_confirm_markup(source.id),
@@ -177,8 +192,10 @@ async def delete_source(
               f"(user {user_id})")
     except Exception as exc:
         print(f"❌ Failed to open delete confirmation: {exc}")
-        await query.edit_message_text(
-            "⚠️ Не удалось открыть подтверждение. Попробуй позже."
+        await _answer(
+            update,
+            "⚠️ Не удалось открыть подтверждение. Попробуй позже.",
+            nav,
         )
     finally:
         session.close()
@@ -188,11 +205,9 @@ async def confirm_delete_source(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Remove a channel and its events."""
-    query = update.callback_query
-    await query.answer()
-
-    source_id = int(query.data.split("_")[-1])
+    source_id = int(update.callback_query.data.split("_")[-1])
     user_id = update.effective_user.id
+    nav = InlineKeyboardMarkup([nav_buttons("my_sources")])
 
     session = SessionLocal()
     try:
@@ -202,8 +217,8 @@ async def confirm_delete_source(
             .first()
         )
         if not source:
-            await query.edit_message_text(
-                "⚠️ Канал не найден. Возможно, он уже удалён."
+            await _answer(
+                update, "⚠️ Канал не найден. Возможно, он уже удалён.", nav
             )
             return
 
@@ -215,17 +230,21 @@ async def confirm_delete_source(
         session.delete(source)
         session.commit()
 
-        await query.edit_message_text(
+        await _answer(
+            update,
             f"🗑 Канал {source.title} удалён вместе с "
-            f"{deleted_events} событиями."
+            f"{deleted_events} событиями.",
+            nav,
         )
         print(f"🗑 Deleted {source.title} and {deleted_events} events "
               f"(user {user_id})")
     except Exception as exc:
         session.rollback()
         print(f"❌ Failed to delete channel: {exc}")
-        await query.edit_message_text(
-            "⚠️ Не удалось удалить канал. Попробуй позже."
+        await _answer(
+            update,
+            "⚠️ Не удалось удалить канал. Попробуй позже.",
+            nav,
         )
     finally:
         session.close()

@@ -1,13 +1,14 @@
-"""Calendar handlers: today and next-week events."""
+"""Calendar handlers: today, tomorrow, week, month and manual date views."""
 
 from datetime import datetime, timedelta, timezone
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from sqlalchemy.orm import joinedload
 
 from database import Event, SessionLocal
+from handlers.start import nav_buttons
 
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 MONTHS = [
@@ -57,87 +58,165 @@ async def show_today(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Show events happening today."""
-    user_id = update.effective_user.id
+    start = _today_start()
+    await _show_range(
+        update, context, start, start + timedelta(days=1),
+        f"🔍 События на сегодня ({_format_date(start)}):",
+        back="main_menu",
+    )
 
-    now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow_start = today_start + timedelta(days=1)
 
-    events = get_events(user_id, today_start, tomorrow_start)
-
-    if not events:
-        await _answer(update, EMPTY_TEXT)
-        print(f"📭 No events today (user {user_id})")
-        return
-
-    lines = [f"🔍 События на сегодня ({_format_date(today_start)}):\n"]
-    lines.extend(format_event(ev) for ev in events)
-    await _answer(update, "\n".join(lines))
-    print(f"✅ Shown {len(events)} today events (user {user_id})")
+async def show_tomorrow(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Show events happening tomorrow."""
+    start = _today_start() + timedelta(days=1)
+    await _show_range(
+        update, context, start, start + timedelta(days=1),
+        f"🔍 События на завтра ({_format_date(start)}):",
+        back="dates_menu",
+    )
 
 
 async def show_week(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Show events for the next 7 days, grouped by day."""
-    user_id = update.effective_user.id
+    start = _today_start()
+    end = start + timedelta(days=7)
+    await _show_range(
+        update, context, start, end,
+        f"📅 События на неделю "
+        f"({_format_date(start)} — {_format_date(end - timedelta(days=1))}):",
+        back="dates_menu",
+    )
 
-    now = datetime.now(timezone.utc)
-    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    week_end = week_start + timedelta(days=7)
 
-    events = get_events(user_id, week_start, week_end)
-
-    if not events:
-        await _answer(update, EMPTY_TEXT)
-        print(f"📭 No events this week (user {user_id})")
-        return
-
-    lines = [f"📅 События на неделю ({_format_date(week_start)} — "
-             f"{_format_date(week_end - timedelta(days=1))}):\n"]
-    current_day = None
-    for event in events:
-        day = event.event_date.date()
-        if day != current_day:
-            current_day = day
-            day_label = _format_day(day, now)
-            lines.append(f"\n—— {day_label} ——")
-        lines.append(format_event(event))
-
-    await _answer(update, "\n".join(lines))
-    print(f"✅ Shown {len(events)} week events (user {user_id})")
+async def show_month(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Show events for the next 30 days, grouped by day."""
+    start = _today_start()
+    end = start + timedelta(days=30)
+    await _show_range(
+        update, context, start, end,
+        f"📅 События на месяц "
+        f"({_format_date(start)} — {_format_date(end - timedelta(days=1))}):",
+        back="dates_menu",
+    )
 
 
 async def show_prev_week(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Show events for the previous 7 days, grouped by day."""
-    user_id = update.effective_user.id
+    today_start = _today_start()
+    start = today_start - timedelta(days=7)
+    await _show_range(
+        update, context, start, today_start,
+        f"🗓 События за прошлую неделю "
+        f"({_format_date(start)} — {_format_date(today_start - timedelta(days=1))}):",
+        back="dates_menu",
+    )
 
+
+async def show_prev_month(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Show events for the previous 30 days, grouped by day."""
+    today_start = _today_start()
+    start = today_start - timedelta(days=30)
+    await _show_range(
+        update, context, start, today_start,
+        f"🗓 События за прошлый месяц "
+        f"({_format_date(start)} — {_format_date(today_start - timedelta(days=1))}):",
+        back="dates_menu",
+    )
+
+
+async def manual_date(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Ask the user to type a date."""
+    context.user_data["awaiting_date"] = True
+    await _answer(
+        update,
+        "📝 Напиши дату в формате ДД.ММ.ГГГГ\n"
+        "Например: 15.08.2026",
+        reply_markup=InlineKeyboardMarkup([nav_buttons("dates_menu")]),
+    )
+
+
+async def handle_manual_date_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Show events for a date typed by the user."""
+    text = update.message.text.strip()
+    date = _parse_user_date(text)
+    if not date:
+        await update.message.reply_text(
+            "🤔 Не понял дату. Формат: ДД.ММ.ГГГГ\nНапример: 15.08.2026",
+            reply_markup=InlineKeyboardMarkup([nav_buttons("dates_menu")]),
+        )
+        return
+    context.user_data.pop("awaiting_date", None)
+    start = datetime(date.year, date.month, date.day)
+    await _show_range(
+        update, context, start, start + timedelta(days=1),
+        f"📅 События на {_format_date(start)}:",
+        back="dates_menu",
+    )
+
+
+def _today_start() -> datetime:
+    """Start of today in the bot's timezone."""
     now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    prev_start = today_start - timedelta(days=7)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    events = get_events(user_id, prev_start, today_start)
+
+def _parse_user_date(text: str) -> datetime | None:
+    """Parse a manually entered date (ДД.ММ.ГГГГ / ДД.ММ.ГГ / ДД.ММ)."""
+    for fmt in ("%d.%m.%Y", "%d.%m.%y", "%d.%m"):
+        try:
+            date = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        if fmt == "%d.%m":
+            date = date.replace(year=datetime.now().year)
+        return date
+    return None
+
+
+async def _show_range(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    start: datetime,
+    end: datetime,
+    header: str,
+    back: str,
+) -> None:
+    """Render events in a date range as a new message with nav buttons."""
+    user_id = update.effective_user.id
+    events = get_events(user_id, start, end)
+    reply_markup = InlineKeyboardMarkup([nav_buttons(back)])
 
     if not events:
-        await _answer(update, EMPTY_TEXT)
-        print(f"📭 No events last week (user {user_id})")
+        await _answer(update, EMPTY_TEXT, reply_markup)
+        print(f"📭 No events in range (user {user_id})")
         return
 
-    lines = [f"🗓 События за прошлую неделю ({_format_date(prev_start)} — "
-             f"{_format_date(today_start - timedelta(days=1))}):\n"]
+    now = datetime.now(timezone.utc)
+    lines = [header, ""]
     current_day = None
     for event in events:
         day = event.event_date.date()
         if day != current_day:
             current_day = day
-            day_label = _format_day(day, now)
-            lines.append(f"\n—— {day_label} ——")
+            lines.append(f"—— {_format_day(day, now)} ——")
         lines.append(format_event(event))
 
-    await _answer(update, "\n".join(lines))
-    print(f"✅ Shown {len(events)} last-week events (user {user_id})")
+    await _answer(update, "\n".join(lines), reply_markup)
+    print(f"✅ Shown {len(events)} events (user {user_id})")
 
 
 def _format_date(date: datetime) -> str:
@@ -159,10 +238,10 @@ def _format_day(day, now: datetime) -> str:
 async def _answer(
     update: Update, text: str, reply_markup=None
 ) -> None:
-    """Reply either to a callback query or a plain message."""
+    """Send a NEW message, either to a callback query or a plain message."""
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(
+        await update.effective_message.reply_text(
             text, reply_markup=reply_markup
         )
     else:
