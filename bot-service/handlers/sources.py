@@ -1,5 +1,6 @@
 """Handler for the user's channel list."""
 
+import asyncio
 import html
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -139,10 +140,10 @@ async def rescan_all(
         for source in sources:
             if rabbitmq.send_parse_request(source.id, source.url, user_id):
                 sent += 1
+            await asyncio.sleep(5)
         await _answer(
             update,
-            f"🔄 Отправил запросы на обновление {sent} из {len(sources)} "
-            "каналов. События обновятся через несколько минут.",
+            f"🔄 Отправил запросы на обновление. События обновятся через несколько минут.",
             nav,
         )
         print(f"🔄 Manual refresh queued for {sent}/{len(sources)} "

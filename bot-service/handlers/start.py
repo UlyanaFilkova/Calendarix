@@ -37,6 +37,14 @@ def dates_menu_markup() -> InlineKeyboardMarkup:
     """Build the 'choose dates' keyboard."""
     keyboard = [
         [
+             InlineKeyboardButton(
+                 "🔍 Сегодня", callback_data="today_events"
+             ),
+             InlineKeyboardButton(
+                 "🔍 Завтра", callback_data="tomorrow_events"
+             ),
+            ],
+        [
             InlineKeyboardButton(
                 "📅 На неделю", callback_data="week_events"
             ),
@@ -50,14 +58,6 @@ def dates_menu_markup() -> InlineKeyboardMarkup:
             ),
             InlineKeyboardButton(
                 "🗓 Прошлый месяц", callback_data="prev_month_events"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                "🔍 Сегодня", callback_data="today_events"
-            ),
-            InlineKeyboardButton(
-                "🔍 Завтра", callback_data="tomorrow_events"
             ),
         ],
         [

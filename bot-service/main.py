@@ -2,6 +2,7 @@
 
 import os
 import random
+import time
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -148,7 +149,7 @@ async def handle_callback(
         context.user_data.pop("awaiting_date", None)
         await query.answer()
         await query.message.reply_text(
-            "📅 Выбери период:", reply_markup=dates_menu_markup()
+            "📅 Выбери даты:", reply_markup=dates_menu_markup()
         )
     elif data == "today_events":
         await show_today(update, context)
@@ -192,6 +193,7 @@ async def handle_callback(
 
 RESCAN_MIN_MINUTES = 15
 RESCAN_MAX_MINUTES = 40
+CHANNEL_SCAN_DELAY_SECONDS = 5
 
 
 def periodic_rescan(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -210,6 +212,7 @@ def periodic_rescan(context: ContextTypes.DEFAULT_TYPE) -> None:
             rabbitmq.send_parse_request(
                 source.id, source.url, source.user_id
             )
+            time.sleep(CHANNEL_SCAN_DELAY_SECONDS)
         print(f"🔄 Periodic rescan queued for {len(sources)} channels")
     except Exception as exc:
         print(f"❌ Periodic rescan failed: {exc}")

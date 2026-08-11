@@ -18,7 +18,7 @@ MONTHS = [
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
 ]
 
-EMPTY_TEXT = "📭 Пока событий нет. Добавь каналы — я буду искать даты!"
+EMPTY_TEXT = "📭 Пока событий на эти даты нет. Добавь каналы — я буду искать!"
 
 
 def format_event(event: Event) -> str:
@@ -223,6 +223,8 @@ async def _show_range(
         day = event.event_date.date()
         if day != current_day:
             current_day = day
+            if lines[-1] != "":
+                lines.append("")
             lines.append(f"—— {_format_day(day, now)} ——")
         lines.append(format_event(event))
 
