@@ -39,7 +39,22 @@ def handle_parse_result(data: dict) -> None:
     session = SessionLocal()
     try:
         saved = 0
+        updated = 0
         for event_data in data.get("events", []):
+            fields = {
+                "title": event_data.get("title") or "Без названия",
+                "description": event_data.get("description"),
+                "tags": event_data.get("tags"),
+                "category": event_data.get("category"),
+                "price": event_data.get("price"),
+                "image_url": event_data.get("image_url"),
+                "event_date": _parse_datetime(event_data.get("event_date")),
+                "end_date": _parse_datetime(event_data.get("end_date")),
+                "location": event_data.get("location"),
+                "url": event_data.get("url"),
+                "original_text": event_data.get("original_text") or "",
+                "raw_data": event_data.get("raw_data"),
+            }
             post_url = event_data.get("post_url")
             existing = None
             if post_url:
@@ -49,27 +64,19 @@ def handle_parse_result(data: dict) -> None:
                     .first()
                 )
             if existing:
+                for key, value in fields.items():
+                    setattr(existing, key, value)
+                updated += 1
                 continue
             session.add(Event(
                 source_id=data.get("source_id"),
                 user_id=data.get("user_id"),
-                title=event_data.get("title") or "Без названия",
-                description=event_data.get("description"),
-                tags=event_data.get("tags"),
-                category=event_data.get("category"),
-                price=event_data.get("price"),
-                image_url=event_data.get("image_url"),
-                event_date=_parse_datetime(event_data.get("event_date")),
-                end_date=_parse_datetime(event_data.get("end_date")),
-                location=event_data.get("location"),
-                url=event_data.get("url"),
-                original_text=event_data.get("original_text") or "",
                 post_url=post_url or "",
-                raw_data=event_data.get("raw_data"),
+                **fields,
             ))
             saved += 1
         session.commit()
-        print(f"💾 Saved {saved} new events "
+        print(f"💾 Saved {saved} new, updated {updated} events "
               f"(source {data.get('source_id')})")
     except Exception as exc:
         session.rollback()

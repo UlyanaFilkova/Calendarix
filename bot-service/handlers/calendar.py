@@ -20,11 +20,16 @@ EMPTY_TEXT = "📭 Пока событий нет. Добавь каналы —
 
 def format_event(event: Event) -> str:
     """Format a single event as readable text."""
-    time_str = event.event_date.strftime("%H:%M")
+    has_time = event.event_date.hour != 0 or event.event_date.minute != 0
+    time_part = (
+        f"🕐 {event.event_date.strftime('%H:%M')} — "
+        if has_time else ""
+    )
     location = f"\n📍 {event.location}" if event.location else ""
+    price = f"\n💵 {event.price}" if event.price else ""
     source = event.source.title if event.source else "—"
     return (
-        f"🕐 {time_str} — {event.title}{location}\n"
+        f"{time_part}{event.title}{location}{price}\n"
         f"📎 {source}"
     )
 
