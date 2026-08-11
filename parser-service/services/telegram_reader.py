@@ -6,7 +6,7 @@ from html import unescape
 
 import requests
 
-from services.nlp import EventExtractor
+from services.nlp import EventExtractor, LLMError
 from utils.url_parser import normalize_channel_url
 
 MIN_TEXT_LENGTH = 30
@@ -49,6 +49,7 @@ class TelegramReader:
         self.extractor = EventExtractor()
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
+        self.processed_urls: set[str] = set()
 
     def _fetch_page(self, username: str) -> str | None:
         resp = self.session.get(
@@ -127,14 +128,20 @@ class TelegramReader:
             text = message["text"]
             if len(text) < MIN_TEXT_LENGTH:
                 continue
-
-            event = self.extractor.extract(
-                text,
-                self._parse_post_date(message["date"]) or datetime.now(),
-            )
-            if not event:
+            if message["url"] in self.processed_urls:
                 continue
 
+            try:
+                event = self.extractor.extract(
+                    text,
+                    self._parse_post_date(message["date"]) or datetime.now(),
+                )
+            except LLMError as exc:
+                print(f"⏹ Stopping scan: LLM unavailable ({exc})")
+                break
+            self.processed_urls.add(message["url"])
+            if not event:
+                continue
             event["original_text"] = text[:MAX_ORIGINAL_TEXT]
             event["post_url"] = message["url"]
             events.append(event)

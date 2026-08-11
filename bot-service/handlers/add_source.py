@@ -2,10 +2,11 @@
 
 import re
 
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from database import SessionLocal, Source
+from handlers.start import nav_buttons
 
 # Matches https://t.me/username or @username
 CHANNEL_PATTERN = re.compile(
@@ -78,7 +79,10 @@ async def add_source(
             await update.message.reply_text(
                 f"✅ Канал {username} добавлен. "
                 "Отправил запрос на сканирование. "
-                "Новые события появятся здесь через минуту."
+                "Новые события появятся здесь через минуту.",
+                reply_markup=InlineKeyboardMarkup(
+                    [nav_buttons("main_menu")]
+                ),
             )
         else:
             await update.message.reply_text(

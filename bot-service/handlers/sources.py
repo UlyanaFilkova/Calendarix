@@ -85,7 +85,7 @@ async def show_sources(
         keyboard.append(
             [
                 InlineKeyboardButton(
-                    "🔄 Обновить все каналы", callback_data="rescan_all"
+                    "🔄 Обновить данные из каналов", callback_data="rescan_all"
                 )
             ]
         )
@@ -117,15 +117,21 @@ async def rescan_all(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Send refresh requests for all of the user's channels."""
+    if update.callback_query:
+        await update.callback_query.answer()
     user_id = update.effective_user.id
     nav = InlineKeyboardMarkup([nav_buttons("my_sources")])
+    reply_to = (
+        update.effective_message
+        if update.effective_message
+        else update.message
+    )
 
     rabbitmq = context.bot_data.get("rabbitmq")
     if not rabbitmq:
-        await _answer(
-            update,
+        await reply_to.reply_text(
             "⚠️ Сервис сканирования сейчас недоступен. Попробуй позже.",
-            nav,
+            reply_markup=nav,
         )
         return
 
@@ -141,19 +147,18 @@ async def rescan_all(
             if rabbitmq.send_parse_request(source.id, source.url, user_id):
                 sent += 1
             await asyncio.sleep(5)
-        await _answer(
-            update,
-            f"🔄 Отправил запросы на обновление. События обновятся через несколько минут.",
-            nav,
+        await reply_to.reply_text(
+            f"🔄 Отправил запросы на обновление. "
+            "События обновятся через несколько минут.",
+            reply_markup=nav,
         )
         print(f"🔄 Manual refresh queued for {sent}/{len(sources)} "
               f"channels (user {user_id})")
     except Exception as exc:
         print(f"❌ Failed to refresh channels: {exc}")
-        await _answer(
-            update,
+        await reply_to.reply_text(
             "⚠️ Не удалось запустить обновление. Попробуй позже.",
-            nav,
+            reply_markup=nav,
         )
     finally:
         session.close()

@@ -87,6 +87,10 @@ SYSTEM_PROMPT = """Ты — анализатор текста для кален�
 Пример: "Сегодня совершается память пророка Илии" → "Память пророка Илии"."""
 
 
+class LLMError(Exception):
+    """Raised when the LLM request itself fails (quota, network, ...)."""
+
+
 class EventExtractor:
     """Extracts event data from a message text using a Groq LLM."""
 
@@ -97,7 +101,11 @@ class EventExtractor:
         )
 
     def extract(self, text: str, current_date: datetime) -> dict | None:
-        """Send text to the LLM and return the extracted event, if any."""
+        """Send text to the LLM and return the extracted event, if any.
+
+        Returns None when the message legitimately has no event.
+        Raises LLMError when the LLM request itself fails.
+        """
         prompt = (
             SYSTEM_PROMPT
             .replace(
@@ -136,8 +144,8 @@ class EventExtractor:
                 continue
             except Exception as exc:
                 print(f"❌ LLM request failed: {exc}")
-                return None
-        return None
+                raise LLMError(str(exc)) from exc
+        raise LLMError("LLM returned invalid JSON twice")
 
 
 def _clean_json(content: str) -> str:
