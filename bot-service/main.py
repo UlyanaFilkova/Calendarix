@@ -1,6 +1,7 @@
 """Bot Service entry point: env loading, DB init, handler registration."""
 
 import os
+import random
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -189,11 +190,12 @@ async def handle_callback(
         await query.answer("🤷 Неизвестная кнопка")
 
 
-RESCAN_INTERVAL_SECONDS = 60 * 60  # rescan all channels once per hour
+RESCAN_MIN_MINUTES = 15
+RESCAN_MAX_MINUTES = 40
 
 
 def periodic_rescan(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Periodically re-scan all active channels for new posts."""
+    """Re-scan all active channels and schedule the next scan at random."""
     rabbitmq = context.bot_data.get("rabbitmq")
     if not rabbitmq:
         return
@@ -213,6 +215,14 @@ def periodic_rescan(context: ContextTypes.DEFAULT_TYPE) -> None:
         print(f"❌ Periodic rescan failed: {exc}")
     finally:
         session.close()
+
+    next_in = random.randint(
+        RESCAN_MIN_MINUTES, RESCAN_MAX_MINUTES
+    ) * 60
+    context.job_queue.run_once(
+        periodic_rescan, when=next_in, name="periodic_rescan"
+    )
+    print(f"🕐 Next rescan in {next_in // 60} minutes")
 
 
 def main() -> None:
@@ -241,14 +251,16 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(handle_callback))
 
         if rabbitmq:
-            application.job_queue.run_repeating(
-                periodic_rescan,
-                interval=RESCAN_INTERVAL_SECONDS,
-                first=RESCAN_INTERVAL_SECONDS,
+            first_in = random.randint(
+                RESCAN_MIN_MINUTES, RESCAN_MAX_MINUTES
+            ) * 60
+            application.job_queue.run_once(
+                periodic_rescan, when=first_in, name="periodic_rescan"
             )
             print(
-                f"🕐 Periodic rescan every "
-                f"{RESCAN_INTERVAL_SECONDS // 60} minutes"
+                f"🕐 First rescan in {first_in // 60} minutes, "
+                f"then every {RESCAN_MIN_MINUTES}-{RESCAN_MAX_MINUTES} "
+                "minutes"
             )
 
         print("🤖 Bot started, waiting for updates...")
