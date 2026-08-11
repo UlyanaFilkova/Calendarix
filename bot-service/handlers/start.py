@@ -24,6 +24,11 @@ def main_menu() -> InlineKeyboardMarkup:
                 "📅 На неделю", callback_data="week_events"
             ),
             InlineKeyboardButton(
+                "🗓 Прошлая неделя", callback_data="prev_week_events"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
                 "🔍 Сегодня", callback_data="today_events"
             ),
         ],

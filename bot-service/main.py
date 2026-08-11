@@ -17,8 +17,13 @@ from telegram.ext import (
 
 from database import Event, SessionLocal, init_db
 from handlers.add_source import add_source
-from handlers.calendar import show_today, show_week
-from handlers.sources import show_sources
+from handlers.calendar import show_today, show_prev_week, show_week
+from handlers.sources import (
+    cancel_delete,
+    confirm_delete_source,
+    delete_source,
+    show_sources,
+)
 from handlers.start import start, main_menu
 from services.rabbitmq_client import RabbitMQClient
 
@@ -95,8 +100,16 @@ async def handle_callback(
         await show_today(update, context)
     elif data == "week_events":
         await show_week(update, context)
+    elif data == "prev_week_events":
+        await show_prev_week(update, context)
     elif data == "my_sources":
         await show_sources(update, context)
+    elif data == "cancel_delete":
+        await cancel_delete(update, context)
+    elif data.startswith("delete_source_"):
+        await delete_source(update, context)
+    elif data.startswith("confirm_delete_"):
+        await confirm_delete_source(update, context)
     elif data == "how_to_add":
         await query.answer()
         await query.edit_message_text(

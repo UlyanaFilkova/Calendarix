@@ -103,6 +103,38 @@ async def show_week(
     print(f"✅ Shown {len(events)} week events (user {user_id})")
 
 
+async def show_prev_week(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Show events for the previous 7 days, grouped by day."""
+    user_id = update.effective_user.id
+
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    prev_start = today_start - timedelta(days=7)
+
+    events = get_events(user_id, prev_start, today_start)
+
+    if not events:
+        await _answer(update, EMPTY_TEXT)
+        print(f"📭 No events last week (user {user_id})")
+        return
+
+    lines = [f"🗓 События за прошлую неделю ({_format_date(prev_start)} — "
+             f"{_format_date(today_start - timedelta(days=1))}):\n"]
+    current_day = None
+    for event in events:
+        day = event.event_date.date()
+        if day != current_day:
+            current_day = day
+            day_label = _format_day(day, now)
+            lines.append(f"\n—— {day_label} ——")
+        lines.append(format_event(event))
+
+    await _answer(update, "\n".join(lines))
+    print(f"✅ Shown {len(events)} last-week events (user {user_id})")
+
+
 def _format_date(date: datetime) -> str:
     """Format a date, e.g. "7 августа"."""
     return f"{date.day} {MONTHS[date.month - 1]}"
@@ -119,10 +151,14 @@ def _format_day(day, now: datetime) -> str:
     return label
 
 
-async def _answer(update: Update, text: str) -> None:
+async def _answer(
+    update: Update, text: str, reply_markup=None
+) -> None:
     """Reply either to a callback query or a plain message."""
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text)
+        await update.callback_query.edit_message_text(
+            text, reply_markup=reply_markup
+        )
     else:
-        await update.message.reply_text(text)
+        await update.message.reply_text(text, reply_markup=reply_markup)
