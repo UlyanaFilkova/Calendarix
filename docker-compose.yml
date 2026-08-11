@@ -68,7 +68,10 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_MODEL: ${LLM_MODEL}
       RABBITMQ_URL: ${RABBITMQ_URL}
+      DATABASE_URL: ${DATABASE_URL}
     restart: unless-stopped
+    volumes:
+      - parser_data:/app/data
     develop:
       watch:
         - action: rebuild
@@ -77,3 +80,4 @@ services:
 volumes:
   pgdata:
   rabbitmq_data:
+  parser_data:

@@ -1,4 +1,5 @@
 pika
 requests
-openai
 python-dotenv
+dspy
+psycopg2-binary

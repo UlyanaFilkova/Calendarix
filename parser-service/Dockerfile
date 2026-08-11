@@ -6,6 +6,9 @@ ENV PYTHONUNBUFFERED=1
 # Working directory inside the container
 WORKDIR /app
 
+# Directory for the compiled DSPy program (persisted via a volume)
+RUN mkdir -p /app/data
+
 # Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
