@@ -1,0 +1,71 @@
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: calendarix-postgres
+    environment:
+      POSTGRES_USER: calendarix
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: calendarix
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calendarix -d calendarix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # RabbitMQ message broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: calendarix-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: calendarix
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # Telegram bot
+  bot:
+    build: ./bot-service
+    container_name: calendarix-bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      DATABASE_URL: ${DATABASE_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    restart: unless-stopped
+
+  # Parser worker: scans channels and extracts events
+  parser:
+    build: ./parser-service
+    container_name: calendarix-parser
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  rabbitmq_data:
