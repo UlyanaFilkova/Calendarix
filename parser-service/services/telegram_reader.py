@@ -6,7 +6,7 @@ from html import unescape
 
 import requests
 
-from services.nlp import EventExtractor
+from services.nlp import EventExtractor, LLMError
 from utils.url_parser import normalize_channel_url
 
 MIN_TEXT_LENGTH = 30
@@ -28,6 +28,10 @@ TEXT_DIV_RE = re.compile(
     re.S,
 )
 TIME_RE = re.compile(r'<time datetime="([^"]+)"')
+CHANNEL_TITLE_RE = re.compile(
+    r'class="tgme_channel_info_header_title"[^>]*>(.*?)</div>',
+    re.S,
+)
 
 
 def _clean_html(raw: str) -> str:
@@ -45,6 +49,7 @@ class TelegramReader:
         self.extractor = EventExtractor()
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
+        self.processed_urls: set[str] = set()
 
     def _fetch_page(self, username: str) -> str | None:
         resp = self.session.get(
@@ -107,30 +112,48 @@ class TelegramReader:
 
         html = self._fetch_page(username)
         if html is None:
-            return [], 0
+            return [], 0, None
+
+        channel_title = self._extract_channel_title(html)
+        print(f"📥 Received posts from {channel} ({channel_title!r})")
 
         messages = self._parse_messages(html, username)
         print(f"📥 Received {len(messages)} messages from {channel}")
         if not messages:
             print(f"⚠️ No posts found in {channel} (private or empty)")
-            return [], 0
+            return [], 0, channel_title
 
         events: list[dict] = []
         for message in messages[:limit]:
             text = message["text"]
             if len(text) < MIN_TEXT_LENGTH:
                 continue
-
-            event = self.extractor.extract(
-                text,
-                self._parse_post_date(message["date"]) or datetime.now(),
-            )
-            if not event:
+            if message["url"] in self.processed_urls:
                 continue
 
+            try:
+                event = self.extractor.extract(
+                    text,
+                    self._parse_post_date(message["date"]) or datetime.now(),
+                )
+            except LLMError as exc:
+                print(f"⏹ Stopping scan: LLM unavailable ({exc})")
+                break
+            self.processed_urls.add(message["url"])
+            if not event:
+                continue
             event["original_text"] = text[:MAX_ORIGINAL_TEXT]
             event["post_url"] = message["url"]
             events.append(event)
 
         print(f"✅ Found {len(events)} events in {channel}")
-        return events, len(messages)
+        return events, len(messages), channel_title
+
+    @staticmethod
+    def _extract_channel_title(html: str) -> str | None:
+        """Extract the channel display name from the t.me/s page."""
+        match = CHANNEL_TITLE_RE.search(html)
+        if not match:
+            return None
+        title = _clean_html(match.group(1))
+        return title or None

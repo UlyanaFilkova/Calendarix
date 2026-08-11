@@ -42,12 +42,13 @@ def on_parse_request(ch, method, properties, body):
         url = request.get("url", "")
         print(f"📥 Task received: source_id={source_id}, url={url}")
 
-        events, checked = reader.scan_channel(url)
+        events, checked, channel_title = reader.scan_channel(url)
 
         response = {
             "source_id": source_id,
             "user_id": user_id,
             "events": events,
+            "channel_title": channel_title,
             "scanned_at": datetime.now(timezone.utc).isoformat(),
         }
         ch.basic_publish(
