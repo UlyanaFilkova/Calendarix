@@ -51,6 +51,10 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       RABBITMQ_URL: ${RABBITMQ_URL}
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./bot-service
 
   # Parser worker: scans channels and extracts events
   parser:

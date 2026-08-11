@@ -66,9 +66,13 @@ async def show_sources(
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        f"🗑 {source.title}",
+                        "🔁 Сканировать",
+                        callback_data=f"rescan_source_{source.id}",
+                    ),
+                    InlineKeyboardButton(
+                        "🗑 Удалить",
                         callback_data=f"delete_source_{source.id}",
-                    )
+                    ),
                 ]
             )
 
@@ -82,6 +86,60 @@ async def show_sources(
         print(f"❌ Failed to list channels: {exc}")
         await _answer(
             update, "⚠️ Не удалось получить список каналов. Попробуй позже."
+        )
+    finally:
+        session.close()
+
+
+async def rescan_source(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Re-send a parse request for a channel."""
+    query = update.callback_query
+    await query.answer()
+
+    source_id = int(query.data.split("_")[-1])
+    user_id = update.effective_user.id
+
+    session = SessionLocal()
+    try:
+        source = (
+            session.query(Source)
+            .filter(Source.id == source_id, Source.user_id == user_id)
+            .first()
+        )
+        if not source:
+            await query.edit_message_text(
+                "⚠️ Канал не найден. Возможно, он уже удалён."
+            )
+            return
+
+        rabbitmq = context.bot_data.get("rabbitmq")
+        if not rabbitmq:
+            await query.edit_message_text(
+                "⚠️ Сервис сканирования сейчас недоступен. "
+                "Попробуй позже."
+            )
+            return
+
+        sent = rabbitmq.send_parse_request(
+            source.id, source.url, user_id
+        )
+        if sent:
+            await query.edit_message_text(
+                f"🔁 Запрос на сканирование {source.title} отправлен. "
+                "События появятся через минуту."
+            )
+        else:
+            await query.edit_message_text(
+                f"⚠️ Не удалось отправить запрос для {source.title}. "
+                "Попробуй ещё раз."
+            )
+        print(f"🔁 Rescan requested for {source.title} (user {user_id})")
+    except Exception as exc:
+        print(f"❌ Failed to rescan channel: {exc}")
+        await query.edit_message_text(
+            "⚠️ Не удалось запустить сканирование. Попробуй позже."
         )
     finally:
         session.close()

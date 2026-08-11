@@ -22,6 +22,7 @@ from handlers.sources import (
     cancel_delete,
     confirm_delete_source,
     delete_source,
+    rescan_source,
     show_sources,
 )
 from handlers.start import start, main_menu
@@ -108,6 +109,8 @@ async def handle_callback(
         await cancel_delete(update, context)
     elif data.startswith("delete_source_"):
         await delete_source(update, context)
+    elif data.startswith("rescan_source_"):
+        await rescan_source(update, context)
     elif data.startswith("confirm_delete_"):
         await confirm_delete_source(update, context)
     elif data == "how_to_add":
